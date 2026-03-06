@@ -20,7 +20,6 @@ const PLACEHOLDER_IMG = "https://placehold.co/150x150/1a1a1a/ffffff?text=No+Imag
 const PAYMENT_BASE_URL = "https://funpay.com/lots/offer?id=64078084"; 
 const TG_BOT_USERNAME = "blackrussiacases_bot";
 const BROWSER_TG_AUTH_KEY = "br_tg_browser_auth_v1";
-const PERF_MODE_PREF_KEY = "br_perf_mode_pref_v1";
 const ALLOW_BROWSER_AUTH_WITHOUT_SERVER_VERIFY = true;
 
 const RARITY_VALS = { 'consumer': 1, 'common': 2, 'rare': 3, 'epic': 4, 'legendary': 5, 'mythical': 6 };
@@ -134,7 +133,6 @@ let selectedInventoryIndex = null, upgradeState = { sourceIdx: null, targetItem:
 let ALL_ITEMS_POOL = [], contractSelection = [];
 let serverTimeOffset = 0; 
 let browserAuthResolve = null;
-let PERF_LITE_MODE = false;
 let adminSessionAuthorized = false;
 let adminCases = [];
 let adminCaseItems = [];
@@ -148,53 +146,6 @@ let adminCurrentMode = 'cases';
 
 function isMobilePerfMode() {
     return window.matchMedia('(max-width: 768px)').matches;
-}
-
-function isLitePerfMode() {
-    try {
-        const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        const maxWidth = window.matchMedia('(max-width: 1024px)').matches;
-        const mem = Number(navigator.deviceMemory || 0);
-        const cores = Number(navigator.hardwareConcurrency || 0);
-        const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
-        const saveData = !!(conn && conn.saveData);
-        const weakDevice = (mem > 0 && mem <= 4) || (cores > 0 && cores <= 4);
-        return reduceMotion || saveData || (maxWidth && weakDevice);
-    } catch (e) {
-        return isMobilePerfMode();
-    }
-}
-
-function getPerformanceModePreference() {
-    try {
-        const val = localStorage.getItem(PERF_MODE_PREF_KEY);
-        if (val === 'auto' || val === 'performance' || val === 'quality') return val;
-    } catch (e) {}
-    return 'auto';
-}
-
-function applyPerformanceMode(mode) {
-    const normalized = (mode === 'performance' || mode === 'quality') ? mode : 'auto';
-    const autoLite = isLitePerfMode();
-    PERF_LITE_MODE = normalized === 'performance' ? true : (normalized === 'quality' ? false : autoLite);
-
-    if (PERF_LITE_MODE) document.body.classList.add('perf-lite-mode');
-    else document.body.classList.remove('perf-lite-mode');
-
-    const selector = document.getElementById('perf-mode-select');
-    if (selector) selector.value = normalized;
-}
-
-function setPerformanceMode(mode) {
-    const normalized = (mode === 'performance' || mode === 'quality') ? mode : 'auto';
-    try {
-        localStorage.setItem(PERF_MODE_PREF_KEY, normalized);
-    } catch (e) {}
-    applyPerformanceMode(normalized);
-
-    if (normalized === 'performance') showNotify('Режим: Производительность', 'success');
-    else if (normalized === 'quality') showNotify('Режим: Качество', 'info');
-    else showNotify('Режим: Авто', 'info');
 }
 
 function isTelegramWebAppContext() {
@@ -309,7 +260,6 @@ window.onTelegramAuth = async function onTelegramAuth(tgUser) {
 document.addEventListener('DOMContentLoaded', () => {
     try { if(tg) tg.expand(); } catch(e) {}
     if (isMobilePerfMode()) document.body.classList.add('mobile-perf-mode');
-    applyPerformanceMode(getPerformanceModePreference());
     initAdminUiState();
     // Set default active tab to 'cases'
     switchTab('cases');
@@ -584,14 +534,12 @@ function addLiveFeedItem(item) {
         <div class="live-info"><span class="u-name">${item.user_name || 'Игрок'}${verifyBadge}</span><span class="i-name" style="color: ${color}">${item.item_name}</span></div>
         <img src="${item.item_img}" class="live-item-img" onerror="this.src='${PLACEHOLDER_IMG}'">
     `;
-    if (!PERF_LITE_MODE) {
-        el.style.animation = 'slideInUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)';
-    }
+    el.style.animation = 'slideInUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)';
     track.prepend(el);
     
     // Add subtle shake effect to live feed header
     const header = document.querySelector('.header');
-    if (!PERF_LITE_MODE && header && ['legendary', 'mythical', 'epic'].includes(item.item_rarity)) {
+    if (header && ['legendary', 'mythical', 'epic'].includes(item.item_rarity)) {
         shakeElement(header, 2, 200);
     }
     
@@ -1281,7 +1229,6 @@ function playWinSound(rarity = 'common') {
 }
 
 function createClickParticle(x, y) {
-    if (PERF_LITE_MODE) return;
     const container = createParticleContainer();
     for(let i = 0; i < 12; i++) {
         const particle = document.createElement('div');
@@ -1340,13 +1287,13 @@ function playContainerAnim(winItem) {
 }
 function playRouletteAnim(count, wins) { 
     const modal = document.getElementById('modal-roulette'); const container = document.getElementById('roulette-strips-container'); 
-    const mobilePerf = isMobilePerfMode() || PERF_LITE_MODE;
+    const mobilePerf = isMobilePerfMode();
     container.innerHTML = ''; modal.style.display = 'flex'; setTimeout(() => modal.classList.add('active'), 10); 
     if (mobilePerf) modal.classList.add('mobile-perf'); else modal.classList.remove('mobile-perf');
     const isMulti = count > 1; if(isMulti) container.classList.add('grid-mode'); else container.classList.remove('grid-mode'); 
-    const WIN_INDEX = mobilePerf ? 20 : 40;
-    const TOTAL_CARDS = mobilePerf ? 28 : 60;
-    const totalDuration = mobilePerf ? 3000 : 5000;
+    const WIN_INDEX = mobilePerf ? 24 : 40;
+    const TOTAL_CARDS = mobilePerf ? 36 : 60;
+    const totalDuration = mobilePerf ? 3800 : 5000;
     for(let i=0; i<count; i++) { 
         const winItem = wins[i]; const strip = document.createElement('div'); strip.className = 'modern-roulette-track'; 
         const marker = document.createElement('div'); marker.className = 'center-marker'; strip.appendChild(marker); 
@@ -1375,7 +1322,7 @@ function playRouletteAnim(count, wins) {
             // Keep a tiny randomness but always inside the winning card bounds.
             const randOffset = (Math.random() * 2 - 1) * (cardStep * 0.18);
             const distance = (WIN_INDEX * cardStep) + randOffset;
-            const duration = mobilePerf ? (isMulti ? 2.1 + Math.random() * 0.4 : 2.4) : (isMulti ? (4 + Math.random()) : 4.5);
+            const duration = mobilePerf ? (isMulti ? 2.8 + Math.random() * 0.6 : 3.1) : (isMulti ? (4 + Math.random()) : 4.5);
             rail.style.willChange = 'transform';
             rail.style.transition = `transform ${duration}s cubic-bezier(0.15, 0.85, 0.35, 1)`; rail.style.transform = `translateX(-${distance}px)`; 
             setTimeout(() => { rail.style.willChange = 'auto'; }, duration * 1000 + 100);
@@ -1600,8 +1547,6 @@ function openProfileModal() {
     document.getElementById('setting-bank').value = user.bankAccount;
     const browserLogoutBtn = document.getElementById('btn-browser-logout');
     if (browserLogoutBtn) browserLogoutBtn.style.display = isTelegramWebAppContext() ? 'none' : 'block';
-    const perfSelector = document.getElementById('perf-mode-select');
-    if (perfSelector) perfSelector.value = getPerformanceModePreference();
     renderHistory(); renderReferralStats();
     document.getElementById('modal-profile').style.display = 'flex';
 }
@@ -2340,8 +2285,8 @@ function createRipple(event) {
 }
 
 function createConfetti(count = 40) {
-    if (PERF_LITE_MODE || isMobilePerfMode()) {
-        count = Math.min(count, 8);
+    if (isMobilePerfMode()) {
+        count = Math.min(count, 16);
     }
 
     const container = document.getElementById('particle-container');
@@ -2399,7 +2344,7 @@ function addButtonClickEffect(event) {
     if (!btn) return;
     
     btn.classList.add('btn-click-anim');
-    if (!PERF_LITE_MODE) createRipple(event);
+    createRipple(event);
     safeHaptic('selection');
     
     setTimeout(() => btn.classList.remove('btn-click-anim'), 400);
@@ -2427,10 +2372,6 @@ document.addEventListener('click', (e) => {
 }, true);
 
 function initDynamicEffects() {
-    if (PERF_LITE_MODE) {
-        document.documentElement.style.scrollBehavior = 'auto';
-        return;
-    }
     // Add glow effect to shop buttons
     const shopBtns = document.querySelectorAll('.shop-btn');
     shopBtns.forEach((btn, idx) => {
