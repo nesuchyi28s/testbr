@@ -133,6 +133,16 @@ let selectedInventoryIndex = null, upgradeState = { sourceIdx: null, targetItem:
 let ALL_ITEMS_POOL = [], contractSelection = [];
 let serverTimeOffset = 0; 
 let browserAuthResolve = null;
+let adminSessionAuthorized = false;
+let adminCases = [];
+let adminCaseItems = [];
+let adminPromos = [];
+let adminWithdraws = [];
+let adminUsers = [];
+let adminEditingCaseId = null;
+let adminLocalItems = [];
+let adminSelectedUser = null;
+let adminCurrentMode = 'cases';
 
 function isMobilePerfMode() {
     return window.matchMedia('(max-width: 768px)').matches;
@@ -246,6 +256,7 @@ window.onTelegramAuth = async function onTelegramAuth(tgUser) {
 document.addEventListener('DOMContentLoaded', () => {
     try { if(tg) tg.expand(); } catch(e) {}
     if (isMobilePerfMode()) document.body.classList.add('mobile-perf-mode');
+    initAdminUiState();
     // Set default active tab to 'cases'
     switchTab('cases');
     loadCasesFromDB().then(() => {
@@ -941,6 +952,10 @@ function updateUI() {
     renderWithdrawn();
 }
 function switchTab(id) {
+    if (id === 'admin' && !adminSessionAuthorized) {
+        openAdminLoginModal();
+        return;
+    }
     document.querySelectorAll('.section').forEach(e=>e.classList.remove('active'));
     const tabEl = document.getElementById('tab-'+id);
     if (tabEl) {
@@ -971,6 +986,7 @@ function switchTab(id) {
     if(id === 'contract') renderContractGrid();
     if(id === 'top') loadLeaderboard();
     if(id === 'pass') renderBP();
+    if(id === 'admin') adminSetMode(adminCurrentMode);
     window.scrollTo(0,0);
 }
 function showNotify(msg, type = 'info') {
@@ -1689,6 +1705,521 @@ async function openOtherUserProfile(targetUid) {
         const winv = data.withdrawn_items || [];
         if(winv.length === 0) document.getElementById('other-withdrawn-empty').style.display = 'block'; else { document.getElementById('other-withdrawn-empty').style.display = 'none'; winv.forEach(i => { wgrid.innerHTML += `<div class="case-card rarity-${i.rarity}" style="padding:10px;opacity:0.6;"><img src="${i.img}" style="width:100%; height:60px; object-fit:contain;" onerror="this.src='${PLACEHOLDER_IMG}'"><div style="font-size:10px; margin-top:5px;">${i.name}</div><div style="font-size:10px; color:#888;">${i.price} ₽</div></div>`; }); }
     } catch(e) { closeModal('modal-other-profile'); }
+}
+
+// --- EMBEDDED ADMIN PANEL ---
+function initAdminUiState() {
+    const navBtn = document.getElementById('nav-admin');
+    if (navBtn) navBtn.style.display = 'none';
+    const tabs = document.getElementById('admin-mode-tabs');
+    const locked = document.getElementById('admin-view-locked');
+    const status = document.getElementById('admin-status-label');
+    const loginBtn = document.getElementById('btn-admin-login');
+    const logoutBtn = document.getElementById('btn-admin-logout');
+    if (tabs) tabs.style.display = 'none';
+    if (locked) locked.style.display = 'block';
+    if (status) status.innerText = 'Не авторизован';
+    if (loginBtn) loginBtn.style.display = 'inline-flex';
+    if (logoutBtn) logoutBtn.style.display = 'none';
+}
+
+function openAdminLoginModal() {
+    const modal = document.getElementById('modal-admin-login');
+    const err = document.getElementById('admin-login-error');
+    if (err) err.innerText = '';
+    if (modal) modal.style.display = 'flex';
+}
+
+async function adminLogin() {
+    const userInput = document.getElementById('admin-login-user');
+    const passInput = document.getElementById('admin-login-pass');
+    const err = document.getElementById('admin-login-error');
+    const username = (userInput?.value || '').trim();
+    const password = (passInput?.value || '').trim();
+    if (!username || !password) {
+        if (err) err.innerText = 'Введите логин и пароль';
+        return;
+    }
+
+    const { data, error } = await sb.from('admin_users')
+        .select('*')
+        .eq('username', username)
+        .eq('password', password)
+        .maybeSingle();
+    if (error || !data) {
+        if (err) err.innerText = 'Неверный логин или пароль';
+        return;
+    }
+
+    adminSessionAuthorized = true;
+    const navBtn = document.getElementById('nav-admin');
+    if (navBtn) navBtn.style.display = 'inline-flex';
+    const tabs = document.getElementById('admin-mode-tabs');
+    const locked = document.getElementById('admin-view-locked');
+    const status = document.getElementById('admin-status-label');
+    const loginBtn = document.getElementById('btn-admin-login');
+    const logoutBtn = document.getElementById('btn-admin-logout');
+    if (tabs) tabs.style.display = 'grid';
+    if (locked) locked.style.display = 'none';
+    if (status) status.innerText = `Авторизован: ${username}`;
+    if (loginBtn) loginBtn.style.display = 'none';
+    if (logoutBtn) logoutBtn.style.display = 'inline-flex';
+
+    closeModal('modal-admin-login');
+    showNotify('Вход администратора выполнен', 'success');
+    await adminInitData();
+    switchTab('admin');
+}
+
+function adminLogout() {
+    adminSessionAuthorized = false;
+    adminCases = [];
+    adminCaseItems = [];
+    adminPromos = [];
+    adminWithdraws = [];
+    adminUsers = [];
+    adminEditingCaseId = null;
+    adminLocalItems = [];
+    adminSelectedUser = null;
+    initAdminUiState();
+    showNotify('Вы вышли из админ-панели', 'info');
+    switchTab('cases');
+}
+
+function adminRequireAuth() {
+    if (adminSessionAuthorized) return true;
+    openAdminLoginModal();
+    return false;
+}
+
+async function adminInitData() {
+    if (!adminRequireAuth()) return;
+    await Promise.all([
+        adminLoadCases(),
+        adminLoadPromos(),
+        adminLoadWithdraws(),
+        adminLoadUsers(),
+        adminLoadSettings()
+    ]);
+}
+
+function adminSetMode(mode) {
+    if (!adminRequireAuth()) return;
+    adminCurrentMode = mode;
+    ['cases', 'promos', 'withdraws', 'users', 'broadcast', 'settings'].forEach((m) => {
+        const view = document.getElementById(`admin-view-${m}`);
+        const tab = document.getElementById(`admin-tab-${m}`);
+        if (view) view.style.display = (m === mode) ? 'block' : 'none';
+        if (tab) tab.classList.toggle('active', m === mode);
+    });
+    if (mode === 'withdraws') adminLoadWithdraws();
+    if (mode === 'users') adminLoadUsers();
+    if (mode === 'settings') adminLoadSettings();
+}
+
+async function adminLoadCases() {
+    if (!adminRequireAuth()) return;
+    const { data: cData } = await sb.from('cases').select('*').order('id', { ascending: true });
+    const { data: iData } = await sb.from('case_items').select('*');
+    adminCases = cData || [];
+    adminCaseItems = iData || [];
+    adminRenderCasesList();
+    if (!adminEditingCaseId && adminCases.length) adminSelectCase(adminCases[0].id);
+}
+
+function adminRenderCasesList() {
+    const list = document.getElementById('admin-cases-list');
+    if (!list) return;
+    list.innerHTML = '';
+    adminCases.forEach((c) => {
+        const btn = document.createElement('button');
+        btn.className = `admin-case-item ${c.id === adminEditingCaseId ? 'active' : ''}`;
+        btn.innerHTML = `<div>${c.name}</div><small>${c.price} ₽ | ${c.category} | ID ${c.id}</small>`;
+        btn.onclick = () => adminSelectCase(c.id);
+        list.appendChild(btn);
+    });
+}
+
+function adminCreateCase() {
+    adminEditingCaseId = null;
+    adminLocalItems = [];
+    document.getElementById('admin-case-name').value = 'Новый кейс';
+    document.getElementById('admin-case-price').value = 100;
+    document.getElementById('admin-case-category').value = 'default';
+    document.getElementById('admin-case-img').value = PLACEHOLDER_IMG;
+    ['consumer','common','rare','epic','legendary','mythical'].forEach((r) => {
+        document.getElementById(`admin-ch-${r}`).value = 0;
+    });
+    adminRenderCaseItems();
+    adminRenderCasesList();
+}
+
+function adminSelectCase(id) {
+    adminEditingCaseId = id;
+    const c = adminCases.find((x) => Number(x.id) === Number(id));
+    if (!c) return;
+    adminLocalItems = adminCaseItems.filter((i) => Number(i.case_id) === Number(id)).map((i) => ({ ...i }));
+    document.getElementById('admin-case-name').value = c.name || '';
+    document.getElementById('admin-case-price').value = c.price || 0;
+    document.getElementById('admin-case-category').value = c.category || 'default';
+    document.getElementById('admin-case-img').value = c.img || '';
+    const ch = c.chances || {};
+    ['consumer','common','rare','epic','legendary','mythical'].forEach((r) => {
+        document.getElementById(`admin-ch-${r}`).value = ch[r] || 0;
+    });
+    adminRenderCaseItems();
+    adminRenderCasesList();
+}
+
+function adminRenderCaseItems() {
+    const box = document.getElementById('admin-items-container');
+    if (!box) return;
+    box.innerHTML = '';
+    adminLocalItems.forEach((item, idx) => {
+        const row = document.createElement('div');
+        row.className = 'admin-item-row';
+        row.innerHTML = `
+            <input type="text" value="${item.name || ''}" placeholder="Название" onchange="adminLocalItems[${idx}].name=this.value">
+            <input type="number" value="${item.price || 0}" placeholder="Цена" onchange="adminLocalItems[${idx}].price=Number(this.value||0)">
+            <input type="text" value="${item.rarity || 'common'}" placeholder="Редкость" onchange="adminLocalItems[${idx}].rarity=this.value">
+            <input type="text" value="${item.img || ''}" placeholder="URL картинки" onchange="adminLocalItems[${idx}].img=this.value">
+            <button class="btn-danger-small" onclick="adminRemoveItem(${idx})">X</button>
+        `;
+        box.appendChild(row);
+    });
+}
+
+function adminAddItem() {
+    adminLocalItems.push({ name: 'Предмет', price: 100, rarity: 'common', img: PLACEHOLDER_IMG });
+    adminRenderCaseItems();
+}
+
+function adminRemoveItem(idx) {
+    adminLocalItems.splice(idx, 1);
+    adminRenderCaseItems();
+}
+
+async function adminSaveCase() {
+    if (!adminRequireAuth()) return;
+    const caseObj = {
+        name: document.getElementById('admin-case-name').value.trim(),
+        price: Number(document.getElementById('admin-case-price').value || 0),
+        category: document.getElementById('admin-case-category').value,
+        img: document.getElementById('admin-case-img').value.trim(),
+        chances: {
+            consumer: Number(document.getElementById('admin-ch-consumer').value || 0),
+            common: Number(document.getElementById('admin-ch-common').value || 0),
+            rare: Number(document.getElementById('admin-ch-rare').value || 0),
+            epic: Number(document.getElementById('admin-ch-epic').value || 0),
+            legendary: Number(document.getElementById('admin-ch-legendary').value || 0),
+            mythical: Number(document.getElementById('admin-ch-mythical').value || 0)
+        }
+    };
+    if (!caseObj.name) return showNotify('Введите название кейса', 'error');
+
+    let targetId = adminEditingCaseId;
+    if (targetId) {
+        const { error } = await sb.from('cases').update(caseObj).eq('id', targetId);
+        if (error) return showNotify('Ошибка обновления кейса', 'error');
+    } else {
+        const { data, error } = await sb.from('cases').insert([caseObj]).select();
+        if (error || !data?.[0]) return showNotify('Ошибка создания кейса', 'error');
+        targetId = data[0].id;
+        adminEditingCaseId = targetId;
+    }
+
+    await sb.from('case_items').delete().eq('case_id', targetId);
+    if (adminLocalItems.length) {
+        const payload = adminLocalItems.map((i) => ({
+            case_id: targetId,
+            name: i.name,
+            price: Number(i.price || 0),
+            rarity: (i.rarity || 'common').toLowerCase(),
+            img: i.img || PLACEHOLDER_IMG
+        }));
+        await sb.from('case_items').insert(payload);
+    }
+
+    await adminLoadCases();
+    await loadCasesFromDB();
+    showNotify('Кейс сохранен', 'success');
+}
+
+async function adminDeleteCase() {
+    if (!adminRequireAuth() || !adminEditingCaseId) return;
+    if (!confirm('Удалить кейс?')) return;
+    const { error } = await sb.from('cases').delete().eq('id', adminEditingCaseId);
+    if (error) return showNotify(`Ошибка удаления: ${error.message}`, 'error');
+    adminEditingCaseId = null;
+    adminLocalItems = [];
+    await adminLoadCases();
+    await loadCasesFromDB();
+    adminCreateCase();
+    showNotify('Кейс удален', 'success');
+}
+
+async function adminLoadPromos() {
+    if (!adminRequireAuth()) return;
+    const { data } = await sb.from('admin_promos').select('*').order('id', { ascending: true });
+    adminPromos = data || [];
+    const box = document.getElementById('admin-promos-container');
+    if (!box) return;
+    box.innerHTML = '';
+    adminPromos.forEach((p, idx) => {
+        const row = document.createElement('div');
+        row.className = 'admin-promo-row';
+        row.innerHTML = `
+            <input type="text" value="${p.code || ''}" onchange="adminUpdatePromo(${idx}, 'code', this.value.toUpperCase())">
+            <input type="number" value="${p.reward || 0}" onchange="adminUpdatePromo(${idx}, 'reward', this.value)">
+            <select onchange="adminUpdatePromo(${idx}, 'is_active', this.value === 'true')">
+                <option value="true" ${p.is_active ? 'selected' : ''}>Вкл</option>
+                <option value="false" ${!p.is_active ? 'selected' : ''}>Выкл</option>
+            </select>
+            <button class="btn-danger-small" onclick="adminDeletePromo(${idx})">X</button>
+        `;
+        box.appendChild(row);
+    });
+}
+
+async function adminAddPromo() {
+    if (!adminRequireAuth()) return;
+    const { error } = await sb.from('admin_promos').insert([{ code: 'NEW_CODE', reward: 100, is_active: true }]);
+    if (error) return showNotify(`Ошибка: ${error.message}`, 'error');
+    adminLoadPromos();
+}
+
+async function adminUpdatePromo(idx, field, val) {
+    const p = adminPromos[idx];
+    if (!p) return;
+    const patch = { [field]: field === 'reward' ? Number(val || 0) : val };
+    const { error } = await sb.from('admin_promos').update(patch).eq('id', p.id);
+    if (error) return showNotify('Ошибка обновления промокода', 'error');
+    adminLoadPromos();
+}
+
+async function adminDeletePromo(idx) {
+    const p = adminPromos[idx];
+    if (!p || !confirm('Удалить промокод?')) return;
+    const { error } = await sb.from('admin_promos').delete().eq('id', p.id);
+    if (error) return showNotify('Ошибка удаления промокода', 'error');
+    adminLoadPromos();
+}
+
+async function adminLoadWithdraws() {
+    if (!adminRequireAuth()) return;
+    const { data, error } = await sb.from('withdraws').select('*').order('created_at', { ascending: false });
+    if (error) return showNotify('Нет доступа к заявкам', 'error');
+    adminWithdraws = data || [];
+    const box = document.getElementById('admin-withdraws-container');
+    if (!box) return;
+    box.innerHTML = '';
+    adminWithdraws.forEach((w, idx) => {
+        const row = document.createElement('div');
+        row.className = 'admin-withdraw-row';
+        const what = w.type === 'item' ? `${w.item_name} (${w.amount} ₽)` : `Рефералы (${w.amount} ₽)`;
+        row.innerHTML = `
+            <div>${w.user_name || 'Игрок'} (${w.user_id})</div>
+            <div>${what}</div>
+            <div>${w.bank_account || '-'}</div>
+            <div>${w.status || '-'}</div>
+            <div>
+                ${w.status === 'pending' ? `<button class="btn-secondary" onclick="adminConfirmWithdraw(${idx}, true)">OK</button><button class="btn-danger-small" onclick="adminConfirmWithdraw(${idx}, false)">NO</button>` : '<span>-</span>'}
+            </div>
+        `;
+        box.appendChild(row);
+    });
+}
+
+async function adminConfirmWithdraw(idx, ok) {
+    const w = adminWithdraws[idx];
+    if (!w || w.status !== 'pending') return;
+    const nextStatus = ok ? 'confirmed' : 'rejected';
+    const { error } = await sb.from('withdraws').update({ status: nextStatus }).eq('id', w.id);
+    if (error) return showNotify(`Ошибка: ${error.message}`, 'error');
+    adminLoadWithdraws();
+    showNotify(ok ? 'Заявка подтверждена' : 'Заявка отклонена', ok ? 'success' : 'info');
+}
+
+async function adminLoadUsers() {
+    if (!adminRequireAuth()) return;
+    const { data, error } = await sb.from('users')
+        .select('telegram_id, first_name, username, balance, total_spent, game_nick, game_server, bank_account, referral_earnings, pending_referral_amount, is_verified, is_banned, ban_reason, inventory, withdrawn_items, history')
+        .order('telegram_id', { ascending: false })
+        .limit(500);
+    if (error) return showNotify('Ошибка загрузки игроков', 'error');
+    adminUsers = data || [];
+    adminRenderUsersList();
+}
+
+function adminRenderUsersList() {
+    const list = document.getElementById('admin-users-list');
+    if (!list) return;
+    const q = (document.getElementById('admin-user-search')?.value || '').trim().toLowerCase();
+    list.innerHTML = '';
+    adminUsers
+        .filter((u) => {
+            if (!q) return true;
+            return String(u.telegram_id).includes(q) || (u.first_name || '').toLowerCase().includes(q) || (u.username || '').toLowerCase().includes(q);
+        })
+        .forEach((u) => {
+            const btn = document.createElement('button');
+            const active = adminSelectedUser && Number(adminSelectedUser.telegram_id) === Number(u.telegram_id);
+            btn.className = `admin-user-item ${active ? 'active' : ''}`;
+            btn.innerHTML = `<div>${u.first_name || 'User'} ${u.is_banned ? ' [BAN]' : ''}</div><small>ID: ${u.telegram_id} | Баланс: ${Math.floor(Number(u.balance || 0))} ₽</small>`;
+            btn.onclick = () => adminSelectUser(u.telegram_id);
+            list.appendChild(btn);
+        });
+}
+
+function adminSelectUser(uid) {
+    adminSelectedUser = adminUsers.find((u) => Number(u.telegram_id) === Number(uid)) || null;
+    if (!adminSelectedUser) return;
+    const ed = document.getElementById('admin-user-editor');
+    if (ed) ed.style.display = 'block';
+    document.getElementById('admin-user-id').value = adminSelectedUser.telegram_id;
+    document.getElementById('admin-user-balance').value = Number(adminSelectedUser.balance || 0);
+    document.getElementById('admin-user-total-spent').value = Number(adminSelectedUser.total_spent || 0);
+    document.getElementById('admin-user-name').value = adminSelectedUser.first_name || '';
+    document.getElementById('admin-user-username').value = adminSelectedUser.username || '';
+    document.getElementById('admin-user-game-nick').value = adminSelectedUser.game_nick || '';
+    document.getElementById('admin-user-game-server').value = adminSelectedUser.game_server || '';
+    document.getElementById('admin-user-bank').value = adminSelectedUser.bank_account || '';
+    document.getElementById('admin-user-ref').value = Number(adminSelectedUser.referral_earnings || 0);
+    document.getElementById('admin-user-verified').checked = !!adminSelectedUser.is_verified;
+    document.getElementById('admin-user-banned').checked = !!adminSelectedUser.is_banned;
+    document.getElementById('admin-user-ban-reason').value = adminSelectedUser.ban_reason || '';
+    document.getElementById('admin-user-inventory').value = JSON.stringify(adminSelectedUser.inventory || [], null, 2);
+    document.getElementById('admin-user-withdrawn').value = JSON.stringify(adminSelectedUser.withdrawn_items || [], null, 2);
+    document.getElementById('admin-user-history').value = JSON.stringify(adminSelectedUser.history || [], null, 2);
+    adminRenderUsersList();
+}
+
+function adminParseJsonOrNotify(raw, fallback, label) {
+    try {
+        return raw ? JSON.parse(raw) : fallback;
+    } catch (e) {
+        showNotify(`Ошибка JSON: ${label}`, 'error');
+        throw e;
+    }
+}
+
+async function adminSaveUser() {
+    if (!adminSelectedUser) return showNotify('Выбери игрока', 'error');
+    const inv = adminParseJsonOrNotify(document.getElementById('admin-user-inventory').value, [], 'инвентарь');
+    const withdrawn = adminParseJsonOrNotify(document.getElementById('admin-user-withdrawn').value, [], 'выведенные');
+    const history = adminParseJsonOrNotify(document.getElementById('admin-user-history').value, [], 'история');
+
+    const patch = {
+        balance: Number(document.getElementById('admin-user-balance').value || 0),
+        total_spent: Number(document.getElementById('admin-user-total-spent').value || 0),
+        first_name: document.getElementById('admin-user-name').value.trim(),
+        username: document.getElementById('admin-user-username').value.trim(),
+        game_nick: document.getElementById('admin-user-game-nick').value.trim(),
+        game_server: document.getElementById('admin-user-game-server').value.trim(),
+        bank_account: document.getElementById('admin-user-bank').value.trim(),
+        referral_earnings: Number(document.getElementById('admin-user-ref').value || 0),
+        is_verified: document.getElementById('admin-user-verified').checked,
+        is_banned: document.getElementById('admin-user-banned').checked,
+        ban_reason: document.getElementById('admin-user-ban-reason').value.trim(),
+        inventory: inv,
+        withdrawn_items: withdrawn,
+        history
+    };
+
+    const { error } = await sb.from('users').update(patch).eq('telegram_id', adminSelectedUser.telegram_id);
+    if (error) return showNotify(`Ошибка сохранения игрока: ${error.message}`, 'error');
+
+    if (Number(adminSelectedUser.telegram_id) === Number(user.uid)) {
+        user.balance = patch.balance;
+        user.inventory = patch.inventory;
+        user.withdrawnItems = patch.withdrawn_items;
+        user.history = patch.history;
+        user.isVerified = patch.is_verified;
+        updateUI();
+        renderHistory();
+    }
+
+    showNotify('Игрок сохранен', 'success');
+    adminLoadUsers();
+}
+
+function adminQuickBan(flag) {
+    if (!adminSelectedUser) return showNotify('Выбери игрока', 'error');
+    document.getElementById('admin-user-banned').checked = !!flag;
+    if (!flag) document.getElementById('admin-user-ban-reason').value = '';
+    adminSaveUser();
+}
+
+function adminGrantItem() {
+    if (!adminSelectedUser) return showNotify('Выбери игрока', 'error');
+    const name = document.getElementById('admin-grant-name').value.trim();
+    const price = Number(document.getElementById('admin-grant-price').value || 0);
+    const rarity = (document.getElementById('admin-grant-rarity').value || 'common').trim().toLowerCase();
+    const img = document.getElementById('admin-grant-img').value.trim() || PLACEHOLDER_IMG;
+    if (!name) return showNotify('Укажи название предмета', 'error');
+    const currentInv = adminParseJsonOrNotify(document.getElementById('admin-user-inventory').value, [], 'инвентарь');
+    currentInv.push({ name, price, rarity, img });
+    document.getElementById('admin-user-inventory').value = JSON.stringify(currentInv, null, 2);
+    showNotify('Предмет добавлен в JSON, нажми "Сохранить игрока"', 'info');
+}
+
+async function adminStartBroadcast() {
+    if (!adminRequireAuth()) return;
+    const text = (document.getElementById('admin-broadcast-text')?.value || '').trim();
+    if (!text) return showNotify('Введите текст рассылки', 'error');
+    if (!confirm('Отправить рассылку всем пользователям?')) return;
+
+    const btn = document.getElementById('admin-broadcast-btn');
+    const status = document.getElementById('admin-broadcast-status');
+    const sent = document.getElementById('admin-bc-sent');
+    const total = document.getElementById('admin-bc-total');
+    if (btn) btn.disabled = true;
+    if (status) status.style.display = 'block';
+
+    const { data: usersData, error } = await sb.from('users').select('telegram_id');
+    if (error || !usersData) {
+        if (btn) btn.disabled = false;
+        return showNotify('Ошибка получения пользователей', 'error');
+    }
+
+    if (total) total.innerText = String(usersData.length);
+    let sentCount = 0;
+    for (let i = 0; i < usersData.length; i++) {
+        try {
+            await fetch(API_URL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'broadcast_fast', userId: usersData[i].telegram_id, text })
+            });
+            sentCount += 1;
+            if (sent) sent.innerText = String(sentCount);
+        } catch (e) {}
+        await new Promise((r) => setTimeout(r, 100));
+    }
+
+    if (btn) btn.disabled = false;
+    showNotify('Рассылка завершена', 'success');
+}
+
+async function adminLoadSettings() {
+    if (!adminRequireAuth()) return;
+    const { data } = await sb.from('game_settings').select('x2_drop_active').eq('id', 1).maybeSingle();
+    const active = !!(data && data.x2_drop_active);
+    const el = document.getElementById('admin-x2-status');
+    if (el) el.innerText = active ? 'АКТИВЕН' : 'ОТКЛЮЧЕН';
+}
+
+async function adminToggleX2() {
+    if (!adminRequireAuth()) return;
+    const { data } = await sb.from('game_settings').select('x2_drop_active').eq('id', 1).maybeSingle();
+    const next = !(data && data.x2_drop_active);
+    const { error } = await sb.from('game_settings').upsert({ id: 1, x2_drop_active: next });
+    if (error) return showNotify('Ошибка переключения X2', 'error');
+    isX2DropActive = next;
+    updateX2Indicator();
+    adminLoadSettings();
+    showNotify(next ? 'X2 дроп включен' : 'X2 дроп выключен', 'success');
 }
 
 // === DYNAMIC EFFECTS SYSTEM ===

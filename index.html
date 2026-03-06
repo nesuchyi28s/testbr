@@ -212,6 +212,154 @@
                 <div class="bp-tasks-list" id="bp-tasks"></div>
             </div>
 
+            <div id="tab-admin" class="section">
+                <div class="hero-section small">
+                    <h1>Админ-Панель</h1>
+                    <p>Управление проектом в реальном времени</p>
+                </div>
+
+                <div class="glass-panel admin-shell">
+                    <div class="admin-topbar">
+                        <div class="admin-status">Статус: <span id="admin-status-label">Не авторизован</span></div>
+                        <div class="admin-top-actions">
+                            <button class="btn-secondary" id="btn-admin-login" onclick="openAdminLoginModal()">Войти как админ</button>
+                            <button class="btn-secondary" id="btn-admin-logout" onclick="adminLogout()" style="display:none;">Выйти</button>
+                        </div>
+                    </div>
+
+                    <div class="admin-mode-tabs" id="admin-mode-tabs" style="display:none;">
+                        <button class="admin-mode-btn active" id="admin-tab-cases" onclick="adminSetMode('cases')">Кейсы</button>
+                        <button class="admin-mode-btn" id="admin-tab-promos" onclick="adminSetMode('promos')">Промокоды</button>
+                        <button class="admin-mode-btn" id="admin-tab-withdraws" onclick="adminSetMode('withdraws')">Вывод</button>
+                        <button class="admin-mode-btn" id="admin-tab-users" onclick="adminSetMode('users')">Игроки</button>
+                        <button class="admin-mode-btn" id="admin-tab-broadcast" onclick="adminSetMode('broadcast')">Рассылка</button>
+                        <button class="admin-mode-btn" id="admin-tab-settings" onclick="adminSetMode('settings')">Настройки</button>
+                    </div>
+
+                    <div id="admin-view-locked" class="admin-locked-note">
+                        Доступ закрыт. Нажми "Войти как админ" и авторизуйся.
+                    </div>
+
+                    <div id="admin-view-cases" class="admin-view" style="display:none;">
+                        <div class="admin-layout">
+                            <div class="admin-side-list" id="admin-cases-list"></div>
+                            <div class="admin-main-editor">
+                                <div class="admin-grid-3">
+                                    <input type="text" id="admin-case-name" placeholder="Название кейса">
+                                    <input type="number" id="admin-case-price" placeholder="Цена">
+                                    <select id="admin-case-category">
+                                        <option value="default">Обычные</option>
+                                        <option value="bundles">Наборы</option>
+                                        <option value="risk">Риск</option>
+                                        <option value="free">Бесплатный</option>
+                                        <option value="container">Контейнер</option>
+                                    </select>
+                                </div>
+                                <input type="text" id="admin-case-img" placeholder="URL картинки кейса">
+                                <div class="admin-grid-6">
+                                    <input type="number" step="0.01" id="admin-ch-consumer" placeholder="consumer %">
+                                    <input type="number" step="0.01" id="admin-ch-common" placeholder="common %">
+                                    <input type="number" step="0.01" id="admin-ch-rare" placeholder="rare %">
+                                    <input type="number" step="0.01" id="admin-ch-epic" placeholder="epic %">
+                                    <input type="number" step="0.01" id="admin-ch-legendary" placeholder="legendary %">
+                                    <input type="number" step="0.01" id="admin-ch-mythical" placeholder="mythical %">
+                                </div>
+                                <div class="admin-actions-row">
+                                    <button class="btn-secondary" onclick="adminCreateCase()">+ Новый кейс</button>
+                                    <button class="btn-secondary" onclick="adminAddItem()">+ Добавить предмет</button>
+                                    <button class="btn-primary" onclick="adminSaveCase()">Сохранить кейс</button>
+                                    <button class="btn-danger-small" onclick="adminDeleteCase()">Удалить кейс</button>
+                                </div>
+                                <div id="admin-items-container" class="admin-items-container"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="admin-view-promos" class="admin-view" style="display:none;">
+                        <div class="admin-actions-row">
+                            <button class="btn-primary" onclick="adminAddPromo()">+ Добавить промокод</button>
+                            <button class="btn-secondary" onclick="adminLoadPromos()">Обновить</button>
+                        </div>
+                        <div id="admin-promos-container"></div>
+                    </div>
+
+                    <div id="admin-view-withdraws" class="admin-view" style="display:none;">
+                        <div class="admin-actions-row">
+                            <button class="btn-secondary" onclick="adminLoadWithdraws()">Обновить заявки</button>
+                        </div>
+                        <div id="admin-withdraws-container"></div>
+                    </div>
+
+                    <div id="admin-view-users" class="admin-view" style="display:none;">
+                        <div class="admin-layout">
+                            <div class="admin-side-list">
+                                <input type="text" id="admin-user-search" placeholder="Поиск по ID / имени" oninput="adminRenderUsersList()">
+                                <div id="admin-users-list"></div>
+                            </div>
+                            <div class="admin-main-editor" id="admin-user-editor" style="display:none;">
+                                <div class="admin-grid-3">
+                                    <input type="text" id="admin-user-id" placeholder="ID" disabled>
+                                    <input type="number" id="admin-user-balance" placeholder="Баланс">
+                                    <input type="number" id="admin-user-total-spent" placeholder="Всего потрачено">
+                                </div>
+                                <div class="admin-grid-3">
+                                    <input type="text" id="admin-user-name" placeholder="Имя">
+                                    <input type="text" id="admin-user-username" placeholder="@username">
+                                    <input type="text" id="admin-user-game-nick" placeholder="Игровой ник">
+                                </div>
+                                <div class="admin-grid-3">
+                                    <input type="text" id="admin-user-game-server" placeholder="Игровой сервер">
+                                    <input type="text" id="admin-user-bank" placeholder="Банк счет">
+                                    <input type="number" id="admin-user-ref" placeholder="Реф. заработок">
+                                </div>
+                                <div class="admin-grid-2">
+                                    <label class="admin-check"><input type="checkbox" id="admin-user-verified"> Верифицирован</label>
+                                    <label class="admin-check"><input type="checkbox" id="admin-user-banned"> Забанен</label>
+                                </div>
+                                <input type="text" id="admin-user-ban-reason" placeholder="Причина бана">
+                                <label>Инвентарь (JSON)</label>
+                                <textarea id="admin-user-inventory" rows="6"></textarea>
+                                <label>Выведенные (JSON)</label>
+                                <textarea id="admin-user-withdrawn" rows="4"></textarea>
+                                <label>История (JSON)</label>
+                                <textarea id="admin-user-history" rows="4"></textarea>
+                                <div class="admin-actions-row">
+                                    <button class="btn-primary" onclick="adminSaveUser()">Сохранить игрока</button>
+                                    <button class="btn-secondary" onclick="adminQuickBan(true)">Забанить</button>
+                                    <button class="btn-secondary" onclick="adminQuickBan(false)">Разбанить</button>
+                                </div>
+                                <div class="admin-inline-box">
+                                    <div class="admin-grid-4">
+                                        <input type="text" id="admin-grant-name" placeholder="Название предмета">
+                                        <input type="number" id="admin-grant-price" placeholder="Цена">
+                                        <input type="text" id="admin-grant-rarity" placeholder="Редкость">
+                                        <input type="text" id="admin-grant-img" placeholder="img/...">
+                                    </div>
+                                    <button class="btn-secondary" onclick="adminGrantItem()">Выдать предмет игроку</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="admin-view-broadcast" class="admin-view" style="display:none;">
+                        <textarea id="admin-broadcast-text" rows="5" placeholder="Текст рассылки"></textarea>
+                        <div class="admin-actions-row">
+                            <button class="btn-primary" id="admin-broadcast-btn" onclick="adminStartBroadcast()">Начать рассылку</button>
+                        </div>
+                        <div id="admin-broadcast-status" class="admin-note" style="display:none;">Отправлено: <span id="admin-bc-sent">0</span> / <span id="admin-bc-total">0</span></div>
+                    </div>
+
+                    <div id="admin-view-settings" class="admin-view" style="display:none;">
+                        <div class="admin-inline-box">
+                            <div class="admin-note">X2 дроп: <span id="admin-x2-status">Загрузка...</span></div>
+                            <div class="admin-actions-row">
+                                <button class="btn-primary" onclick="adminToggleX2()">Переключить X2 дроп</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div id="tab-inventory" class="section">
                 <div class="inventory-header"><h2>Гараж</h2><button id="btn-sell-all" class="btn-danger-small" onclick="sellAllItems()">Продать всё</button></div>
                 <div id="inventory-grid" class="inventory-grid"></div>
@@ -229,6 +377,7 @@
         <button class="nav-item" onclick="switchTab('games')"><div class="nav-icon"><span class="css-glyph css-glyph-games"></span></div><span>Игры</span></button>
         <button class="nav-item main-action" onclick="switchTab('cases')"><div class="nav-icon"><span class="css-glyph css-glyph-cases"></span></div></button>
         <button class="nav-item" onclick="switchTab('pass')"><div class="nav-icon"><span class="css-glyph css-glyph-pass"></span></div><span>Pass</span></button>
+        <button class="nav-item" id="nav-admin" onclick="switchTab('admin')" style="display:none;"><div class="nav-icon"><span class="css-glyph css-glyph-settings"></span></div><span>Админ</span></button>
         <button class="nav-item" onclick="switchTab('inventory')"><div class="nav-icon"><span class="css-glyph css-glyph-garage"></span></div><span>Гараж</span></button>
     </nav>
 
@@ -344,9 +493,21 @@
                 </div>
                 <button class="btn-secondary" onclick="copyRefLink()" style="margin-top:10px;">Копировать ссылку</button>
                 <button class="btn-secondary" id="btn-ref-withdraw" onclick="withdrawReferralEarnings()" style="margin-top:10px;">Вывести рефералы</button>
+                <button class="btn-secondary" onclick="openAdminLoginModal()" style="margin-top:10px;">Админ-панель</button>
                 <button class="btn-secondary" id="btn-browser-logout" onclick="logoutBrowserAccount()" style="margin-top:10px; border-color: rgba(239,68,68,0.35); color:#ff7878;">Выйти из аккаунта в браузере</button>
                 <div class="history-block" style="margin-top:20px;"><h4>История</h4><div class="history-scroll-container"><div id="history-list"></div></div></div>
             </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-admin-login">
+        <div class="modal-glass center-modal" style="max-width:420px;">
+            <button class="btn-close" onclick="closeModal('modal-admin-login')">✕</button>
+            <h3>Вход в админ-панель</h3>
+            <input type="text" id="admin-login-user" placeholder="Логин" style="margin-bottom:10px;">
+            <input type="password" id="admin-login-pass" placeholder="Пароль" style="margin-bottom:10px;">
+            <button class="btn-primary" onclick="adminLogin()">Войти</button>
+            <div id="admin-login-error" style="margin-top:10px; color:#ff7878; font-size:12px;"></div>
         </div>
     </div>
     
