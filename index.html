@@ -484,6 +484,14 @@
                             <option value="Magadan">Magadan</option><option value="Cherepovets">Cherepovets</option><option value="Norilsk">Norilsk</option>
                         </select></div>
                     <div class="input-group"><label>Счет</label><input type="number" id="setting-bank" placeholder="0000"></div>
+                    <div class="input-group">
+                        <label>Режим графики</label>
+                        <select id="perf-mode-select" onchange="setPerformanceMode(this.value)">
+                            <option value="auto">Авто</option>
+                            <option value="performance">Производительность</option>
+                            <option value="quality">Качество</option>
+                        </select>
+                    </div>
                     <button class="btn-primary" style="margin-top:10px;" onclick="saveSettings()">Сохранить</button>
                 </div>
                 <div class="section-divider"><span>РЕФЕРАЛКА</span></div>
