@@ -121,7 +121,7 @@ const DEFAULT_USER = {
     gameServer: "Red", bankAccount: "", avatar: "", history: [], activatedPromos: [],
     lastSubCaseTime: 0, isSubscribed: false,
     referrerId: null, referralsCount: 0, referralEarnings: 0, pendingReferralAmount: 0, isBanned: false, banReason: "",
-    totalSpent: 0, isVerified: false,
+    totalSpent: 0, isVerified: false, isAdmin: false,
     bp: { level: 1, exp: 0, premium: false, claimedFree: [], claimedPremium: [], tasks: { open_cases: 0, upgrade_fail: 0, contract_sign: 0, sell_item: 0, daily_login: 0 } },
     deviceIds: [] // Для мультиаккаунта
 };
@@ -150,6 +150,10 @@ function isMobilePerfMode() {
 
 function isTelegramWebAppContext() {
     return !!(window.Telegram && window.Telegram.WebApp && tg.initData && tg.initDataUnsafe && tg.initDataUnsafe.user);
+}
+
+function hasAdminAccess() {
+    return !!(user && user.isAdmin);
 }
 
 function getBrowserAuthProfile() {
@@ -594,7 +598,7 @@ async function initUserSessionSupabase() {
                 referralsCount: data.referrals_count || 0, referralEarnings: data.referral_earnings || 0,
                 pendingReferralAmount: data.pending_referral_amount || 0,
                 withdrawnItems: data.withdrawn_items || [],
-                avatar: photo_url, totalSpent: Number(data.total_spent) || 0, isVerified: data.is_verified || false,
+                avatar: photo_url, totalSpent: Number(data.total_spent) || 0, isVerified: data.is_verified || false, isAdmin: !!data.admin,
                 bp: data.bp || DEFAULT_USER.bp,
                 deviceIds: knownDevices
             };
@@ -657,10 +661,11 @@ async function initUserSessionSupabase() {
                 balance: 0, inventory: [], withdrawn_items: [], history: [], referrer_id: refId, 
                 total_spent: 0, is_verified: false, bp: DEFAULT_USER.bp,
                 pending_referral_amount: 0,
+                admin: false,
                 device_ids: [currentDeviceId] 
             };
             await sb.from('users').insert([newUser]);
-            user = { ...DEFAULT_USER, ...newUser, uid: uid, avatar: photo_url };
+            user = { ...DEFAULT_USER, ...newUser, uid: uid, avatar: photo_url, isAdmin: false };
             
             sendAdminLog('GENERAL', '🆕 Новый игрок', `Регистрация. Рефер: ${refId || 'Нет'}`);
 
@@ -677,6 +682,7 @@ async function initUserSessionSupabase() {
         }
         document.getElementById('loading-screen').style.display = 'none';
         await syncPendingWithdraws();
+        syncAdminUiAccess();
         updateUI(); renderInventory(); renderWithdrawn(); renderHistory(); renderBP();
     } catch(err) {
         document.getElementById('loading-screen').style.display = 'none';
@@ -952,8 +958,8 @@ function updateUI() {
     renderWithdrawn();
 }
 function switchTab(id) {
-    if (id === 'admin' && !adminSessionAuthorized) {
-        openAdminLoginModal();
+    if (id === 'admin' && !hasAdminAccess()) {
+        showNotify('Доступ к админ-панели запрещен', 'error');
         return;
     }
     document.querySelectorAll('.section').forEach(e=>e.classList.remove('active'));
@@ -1710,7 +1716,9 @@ async function openOtherUserProfile(targetUid) {
 // --- EMBEDDED ADMIN PANEL ---
 function initAdminUiState() {
     const navBtn = document.getElementById('nav-admin');
+    const profileAdminBtn = document.getElementById('btn-open-admin-panel');
     if (navBtn) navBtn.style.display = 'none';
+    if (profileAdminBtn) profileAdminBtn.style.display = 'none';
     const tabs = document.getElementById('admin-mode-tabs');
     const locked = document.getElementById('admin-view-locked');
     const status = document.getElementById('admin-status-label');
@@ -1723,14 +1731,53 @@ function initAdminUiState() {
     if (logoutBtn) logoutBtn.style.display = 'none';
 }
 
+function syncAdminUiAccess() {
+    const canAccess = hasAdminAccess();
+    const navBtn = document.getElementById('nav-admin');
+    const profileAdminBtn = document.getElementById('btn-open-admin-panel');
+    const tabs = document.getElementById('admin-mode-tabs');
+    const locked = document.getElementById('admin-view-locked');
+    const status = document.getElementById('admin-status-label');
+    const loginBtn = document.getElementById('btn-admin-login');
+    const logoutBtn = document.getElementById('btn-admin-logout');
+
+    if (navBtn) navBtn.style.display = canAccess ? 'inline-flex' : 'none';
+    if (profileAdminBtn) profileAdminBtn.style.display = canAccess ? 'block' : 'none';
+
+    if (!canAccess) {
+        adminSessionAuthorized = false;
+        if (tabs) tabs.style.display = 'none';
+        if (locked) locked.style.display = 'block';
+        if (status) status.innerText = 'Нет доступа';
+        if (loginBtn) loginBtn.style.display = 'none';
+        if (logoutBtn) logoutBtn.style.display = 'none';
+        return;
+    }
+
+    adminSessionAuthorized = true;
+    if (tabs) tabs.style.display = 'grid';
+    if (locked) locked.style.display = 'none';
+    if (status) status.innerText = 'Доступ разрешен';
+    if (loginBtn) loginBtn.style.display = 'none';
+    if (logoutBtn) {
+        logoutBtn.style.display = 'inline-flex';
+        logoutBtn.innerText = 'Закрыть админку';
+    }
+}
+
 function openAdminLoginModal() {
-    const modal = document.getElementById('modal-admin-login');
-    const err = document.getElementById('admin-login-error');
-    if (err) err.innerText = '';
-    if (modal) modal.style.display = 'flex';
+    if (hasAdminAccess()) {
+        switchTab('admin');
+        return;
+    }
+    showNotify('Недостаточно прав для админ-панели', 'error');
 }
 
 async function adminLogin() {
+    if (!hasAdminAccess()) {
+        showNotify('Недостаточно прав', 'error');
+        return;
+    }
     const userInput = document.getElementById('admin-login-user');
     const passInput = document.getElementById('admin-login-pass');
     const err = document.getElementById('admin-login-error');
@@ -1738,16 +1785,6 @@ async function adminLogin() {
     const password = (passInput?.value || '').trim();
     if (!username || !password) {
         if (err) err.innerText = 'Введите логин и пароль';
-        return;
-    }
-
-    const { data, error } = await sb.from('admin_users')
-        .select('*')
-        .eq('username', username)
-        .eq('password', password)
-        .maybeSingle();
-    if (error || !data) {
-        if (err) err.innerText = 'Неверный логин или пароль';
         return;
     }
 
@@ -1772,7 +1809,8 @@ async function adminLogin() {
 }
 
 function adminLogout() {
-    adminSessionAuthorized = false;
+    if (!hasAdminAccess()) return;
+    adminSessionAuthorized = true;
     adminCases = [];
     adminCaseItems = [];
     adminPromos = [];
@@ -1781,14 +1819,14 @@ function adminLogout() {
     adminEditingCaseId = null;
     adminLocalItems = [];
     adminSelectedUser = null;
-    initAdminUiState();
-    showNotify('Вы вышли из админ-панели', 'info');
+    syncAdminUiAccess();
+    showNotify('Админ-панель закрыта', 'info');
     switchTab('cases');
 }
 
 function adminRequireAuth() {
-    if (adminSessionAuthorized) return true;
-    openAdminLoginModal();
+    if (hasAdminAccess() && adminSessionAuthorized) return true;
+    showNotify('Недостаточно прав для этой функции', 'error');
     return false;
 }
 
@@ -2043,7 +2081,7 @@ async function adminConfirmWithdraw(idx, ok) {
 async function adminLoadUsers() {
     if (!adminRequireAuth()) return;
     const { data, error } = await sb.from('users')
-        .select('telegram_id, first_name, username, balance, total_spent, game_nick, game_server, bank_account, referral_earnings, pending_referral_amount, is_verified, is_banned, ban_reason, inventory, withdrawn_items, history')
+        .select('telegram_id, first_name, username, balance, total_spent, game_nick, game_server, bank_account, referral_earnings, pending_referral_amount, is_verified, is_banned, ban_reason, admin, inventory, withdrawn_items, history')
         .order('telegram_id', { ascending: false })
         .limit(500);
     if (error) return showNotify('Ошибка загрузки игроков', 'error');
@@ -2087,6 +2125,7 @@ function adminSelectUser(uid) {
     document.getElementById('admin-user-ref').value = Number(adminSelectedUser.referral_earnings || 0);
     document.getElementById('admin-user-verified').checked = !!adminSelectedUser.is_verified;
     document.getElementById('admin-user-banned').checked = !!adminSelectedUser.is_banned;
+    document.getElementById('admin-user-admin').checked = !!adminSelectedUser.admin;
     document.getElementById('admin-user-ban-reason').value = adminSelectedUser.ban_reason || '';
     document.getElementById('admin-user-inventory').value = JSON.stringify(adminSelectedUser.inventory || [], null, 2);
     document.getElementById('admin-user-withdrawn').value = JSON.stringify(adminSelectedUser.withdrawn_items || [], null, 2);
@@ -2120,6 +2159,7 @@ async function adminSaveUser() {
         referral_earnings: Number(document.getElementById('admin-user-ref').value || 0),
         is_verified: document.getElementById('admin-user-verified').checked,
         is_banned: document.getElementById('admin-user-banned').checked,
+        admin: document.getElementById('admin-user-admin').checked,
         ban_reason: document.getElementById('admin-user-ban-reason').value.trim(),
         inventory: inv,
         withdrawn_items: withdrawn,
@@ -2135,6 +2175,8 @@ async function adminSaveUser() {
         user.withdrawnItems = patch.withdrawn_items;
         user.history = patch.history;
         user.isVerified = patch.is_verified;
+        user.isAdmin = patch.admin;
+        syncAdminUiAccess();
         updateUI();
         renderHistory();
     }
