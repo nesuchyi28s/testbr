@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BR Admin DB</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <style>
+        body { background: #121212; color: #eee; font-family: 'Segoe UI', monospace; padding: 20px; margin: 0; box-sizing: border-box; }
+        input, textarea, select { -webkit-user-select: text; user-select: text; }
+        h2, h3, h4 { color: #FFD700; margin-top: 0; }
+        #login-overlay { position: fixed; inset: 0; background: #000; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .login-box { background: #1e1e1e; padding: 30px; border: 1px solid #333; border-radius: 12px; text-align: center; width: 300px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
+        .container { display: grid; grid-template-columns: 280px 1fr; gap: 20px; }
+        @media (max-width: 800px) { .container { grid-template-columns: 1fr; } }
+        .sidebar { background: #1e1e1e; padding: 15px; border: 1px solid #333; border-radius: 8px; height: fit-content; max-height: 80vh; overflow-y: auto; }
+        .editor { background: #1e1e1e; padding: 20px; border: 1px solid #333; border-radius: 8px; }
+        button { cursor: pointer; padding: 10px; border: none; font-weight: bold; width: 100%; margin-bottom: 5px; border-radius: 4px; transition: 0.2s; }
+        button:hover { filter: brightness(1.1); }
+        .btn-green { background: #4CAF50; color: white; }
+        .btn-red { background: #ff4d4d; color: white; }
+        .btn-gold { background: #FFD700; color: black; }
+        .btn-blue { background: #2196F3; color: white; }
+        .btn-gray { background: #444; color: #ccc; font-size: 12px; }
+        .btn-item { background: #2a2a2a; color: white; text-align: left; border-bottom: 1px solid #333; padding: 12px; }
+        .btn-item:hover { background: #333; }
+        .btn-item.active { background: #FFD700; color: black; border-color: #FFD700; }
+        input, select, textarea { width: 100%; padding: 10px; margin-bottom: 10px; background: #121212; border: 1px solid #444; color: white; box-sizing: border-box; border-radius: 4px; }
+        label { display: block; font-size: 12px; color: #aaa; margin-bottom: 4px; font-weight: bold; }
+        .items-header { display: grid; grid-template-columns: 50px 2fr 1fr 1.5fr 40px; gap: 10px; padding: 0 10px; font-size: 12px; color: #888; margin-bottom: 5px; }
+        .item-row { display: grid; grid-template-columns: 50px 2fr 1fr 1.5fr 40px; gap: 10px; align-items: start; background: #252525; padding: 10px; margin-bottom: 8px; border-left: 4px solid #555; border-radius: 4px; }
+        .withdraws-header { display: grid; grid-template-columns: 1fr 2fr 1fr 1fr 1fr 60px; gap: 10px; padding: 0 10px; font-size: 12px; color: #888; margin-bottom: 5px; }
+        .withdraw-row { display: grid; grid-template-columns: 1fr 2fr 1fr 1fr 1fr 60px; gap: 10px; align-items: start; background: #252525; padding: 10px; margin-bottom: 8px; border-left: 4px solid #555; border-radius: 4px; }
+        .item-img-preview { width: 40px; height: 40px; object-fit: contain; background: #000; border-radius: 4px; border: 1px solid #333; pointer-events: none; }
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; background: #1e1e1e; padding: 5px; border-radius: 8px; }
+        .tab-btn { background: transparent; color: #aaa; flex: 1; padding: 12px; text-align: center; cursor: pointer; border-radius: 6px; font-weight: 600; }
+        .tab-btn.active { background: #333; color: #FFD700; }
+        .chances-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 10px; margin-bottom: 20px; padding: 15px; background: #181818; border: 1px solid #333; border-radius: 6px; }
+        .border-consumer { border-left-color: #B0B0B0; } .border-common { border-left-color: #4CAF50; } .border-rare { border-left-color: #2196F3; } .border-epic { border-left-color: #9C27B0; } .border-legendary { border-left-color: #FFD700; } .border-mythical { border-left-color: #FF0055; }
+        .promo-row { display: grid; grid-template-columns: 2fr 1fr 1fr 40px; gap: 10px; background: #252525; padding: 10px; margin-bottom: 5px; border-radius: 4px; border-left: 4px solid gold; }
+    </style>
+</head>
+<body>
+
+    <div id="login-overlay">
+        <div class="login-box glass-panel">
+            <h3>🔐 ADMIN ACCESS</h3>
+            <input type="text" id="admin-user" placeholder="Username">
+            <input type="password" id="admin-pass" placeholder="Password">
+            <button class="btn-gold" onclick="login()">ВОЙТИ</button>
+            <div id="login-error" style="color:red; margin-top:10px; font-size:12px;"></div>
+        </div>
+    </div>
+
+    <div class="header glass-panel">
+        <div>
+            <h2>⚙️ ADMIN PANEL</h2>
+            <div style="font-size: 12px; color: #666;">Редактирование базы данных в реальном времени</div>
+        </div>
+        <div style="display:flex; gap:10px;">
+             <button onclick="logout()" class="btn-gray" style="width: auto;">Выйти</button>
+        </div>
+    </div>
+
+    <div class="tabs">
+        <div class="tab-btn active" onclick="setMode('cases')" id="tab-cases">📦 КЕЙСЫ (DB)</div>
+        <div class="tab-btn" onclick="setMode('promos')" id="tab-promos">🎟 ПРОМОКОДЫ</div>
+        <div class="tab-btn" onclick="setMode('broadcast')" id="tab-broadcast">📢 РАССЫЛКА</div>
+        <div class="tab-btn" onclick="setMode('withdraws')" id="tab-withdraws">💸 ВЫВОД</div>
+        <div class="tab-btn" onclick="setMode('settings')" id="tab-settings">⚡ НАСТРОЙКИ</div>
+    </div>
+
+    <div class="container" id="view-cases">
+        <div class="sidebar glass-panel">
+            <h3 style="margin: 0 0 10px 0; font-size: 14px; text-transform: uppercase; color: #666;">Список Кейсов</h3>
+            <div id="cases-list"><div style="text-align:center; padding:10px;">Загрузка...</div></div>
+            <button class="btn-green" style="margin-top: 10px;" onclick="createNewLocalCase()">+ Новый Кейс</button>
+        </div>
+
+        <div class="editor glass-panel" id="editor-area" style="display:none;">
+            <div style="display: flex; gap: 20px; align-items: flex-start; margin-bottom: 20px;">
+                <img id="case-img-preview" src="" style="width: 80px; height: 80px; object-fit: contain; background: #111; border: 1px solid #333; border-radius: 8px;">
+                <div style="flex: 1;">
+                    <label>Название кейса:</label>
+                    <input type="text" id="case-name" oninput="updatePreview()">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+                        <div>
+                            <label>Цена (₽):</label>
+                            <input type="number" id="case-price" oninput="updatePreview()">
+                        </div>
+                        <div>
+                            <label>Категория:</label>
+                            <select id="case-category">
+                                <option value="default">Обычные</option>
+                                <option value="bundles">Наборы</option>
+                                <option value="risk">Всё или Ничего</option>
+                                <option value="free">Бесплатный</option>
+                                <option value="container">Контейнеры</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>Картинка (URL):</label>
+                            <input type="text" id="case-img" oninput="updatePreview()">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <h4 style="border-bottom: 1px solid #333; padding-bottom: 5px; margin-bottom: 10px;">🎲 Шансы выпадения (%)</h4>
+            <div class="chances-grid">
+                <div><label style="color:#B0B0B0">Ширп</label><input type="number" step="0.01" id="chance-consumer"></div>
+                <div><label style="color:#4CAF50">Обычный</label><input type="number" step="0.01" id="chance-common"></div>
+                <div><label style="color:#2196F3">Редкий</label><input type="number" step="0.01" id="chance-rare"></div>
+                <div><label style="color:#9C27B0">Эпик</label><input type="number" step="0.01" id="chance-epic"></div>
+                <div><label style="color:#FFD700">Легендарный</label><input type="number" step="0.01" id="chance-legendary"></div>
+                <div><label style="color:#FF0055">МИФИЧЕСКИЙ</label><input type="number" step="0.01" id="chance-mythical"></div>
+            </div>
+
+            <div style="background: #1a1a1a; padding: 10px; border-radius: 8px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                    <h4 style="margin:0;">Содержимое кейса</h4>
+                    <button class="btn-green" style="width:auto; font-size:12px;" onclick="addLocalItem()">+ Добавить предмет</button>
+                </div>
+                <div class="items-header"><span>IMG</span><span>Название</span><span>Цена (₽)</span><span>Редкость</span><span>Del</span></div>
+                <div id="items-container"></div>
+            </div>
+            
+            <div style="display:flex; gap:10px; margin-top:20px;">
+                <button class="btn-blue" onclick="saveCaseToDB()">💾 СОХРАНИТЬ В БАЗУ ДАННЫХ</button>
+                <button class="btn-red" onclick="deleteCaseFromDB()" id="btn-delete-case">Удалить Кейс</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container" id="view-promos" style="display:none; grid-template-columns: 1fr;">
+        <div class="editor glass-panel">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px;">
+                <h3>Активные Промокоды (DB)</h3>
+                <button class="btn-blue" style="width:auto; padding: 10px 20px;" onclick="addPromo()">+ Добавить код</button>
+            </div>
+            <div class="items-header" style="grid-template-columns: 2fr 1fr 1fr 40px;">
+                <span>Код (Пример: BONUS)</span>
+                <span>Сумма награды (₽)</span>
+                <span>Статус (Вкл/Выкл)</span>
+                <span>Del</span>
+            </div>
+            <div id="promos-container">
+                <div style="text-align:center; padding: 20px; color:#666;">Загрузка промокодов из БД...</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container" id="view-broadcast" style="display:none; grid-template-columns: 1fr;">
+        <div class="editor glass-panel" style="max-width: 600px; margin: 0 auto;">
+            <h3 style="margin-bottom: 20px;">📢 Рассылка всем пользователям</h3>
+            <p style="color: #aaa; font-size: 13px; margin-bottom: 20px;">
+                Сообщение будет отправлено всем пользователям из базы данных через бота.
+                Процесс может занять время. Не закрывайте вкладку.
+            </p>
+            
+            <label>Текст сообщения:</label>
+            <textarea id="broadcast-text" rows="5" placeholder="Введите текст новости..."></textarea>
+            
+            <div id="broadcast-status" style="margin: 15px 0; font-size: 13px; color: #FFD700; display:none;">
+                Отправлено: <span id="bc-sent">0</span> / <span id="bc-total">0</span>
+            </div>
+
+            <button class="btn-green" onclick="startBroadcast()" id="btn-broadcast">НАЧАТЬ РАССЫЛКУ</button>
+        </div>
+    </div>
+
+    <!-- вывод заявок -->
+    <div class="container" id="view-withdraws" style="display:none; grid-template-columns: 1fr;">
+        <div class="editor glass-panel" style="max-width: 800px; margin: 0 auto;">
+            <h3 style="margin-bottom: 20px;">💸 Заявки на вывод</h3>
+            <div id="withdraws-container">
+                <div style="text-align:center; padding: 20px; color:#666;">Загрузка заявок...</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container" id="view-settings" style="display:none; grid-template-columns: 1fr;">
+        <div class="editor glass-panel" style="max-width: 600px; margin: 0 auto;">
+            <h3 style="margin-bottom: 30px;">⚡ Системные настройки</h3>
+            
+            <div style="background: #1a1a1a; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 2px solid rgba(255, 215, 0, 0.2);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <div>
+                        <h4 style="margin: 0 0 5px 0; font-size: 16px;">🎲 X2 ДРОП</h4>
+                        <p style="color: #888; font-size: 12px; margin: 0;">Удваивает шансы выпадения редких предметов</p>
+                    </div>
+                    <div style="text-align: right;">
+                        <span id="x2-status" style="font-size: 12px; color: #666;">ЗАГРУЗКА...</span>
+                        <button class="btn-blue" style="margin-top: 10px; width: auto; padding: 8px 20px;" onclick="toggleX2FromAdmin()">ПЕРЕКЛЮЧИТЬ</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://itqlqsixknkqoggvubrp.supabase.co'; 
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml0cWxxc2l4a25rcW9nZ3Z1YnJwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA5MjE3MDIsImV4cCI6MjA4NjQ5NzcwMn0.mV0As50_W8MBC3kpLYm_mLbExqRRyf8JaJi1eNOtAj4'; 
+        // ВСТАВЬ СЮДА ТОТ ЖЕ API URL ЧТО И В SCRIPT.JS
+        const API_URL = "https://script.google.com/macros/s/AKfycbwCTnYYNY3u9ceNdIxlBd0so2fWxNCzxgmQfuDntr3HuKRu9gK9cmGzkeui_Z-4HGQiqw/exec";
+        
+        const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        const PLACEHOLDER_IMG = "https://placehold.co/100x100/1a1a1a/ffffff?text=No+Image";
+
+        let dbCases = [];
+        let dbItems = [];
+        let promoData = [];
+        let editingCaseId = null;
+        let localItems = [];
+
+        async function login() {
+            const u = document.getElementById('admin-user').value;
+            const p = document.getElementById('admin-pass').value;
+            const { data, error } = await sb.from('admin_users').select('*').eq('username', u).eq('password', p).maybeSingle();
+            if (data) {
+                document.getElementById('login-overlay').style.display = 'none';
+                initDashboard();
+            } else {
+                document.getElementById('login-error').innerText = "Неверный логин или пароль";
+            }
+        }
+        function logout() { location.reload(); }
+
+        async function initDashboard() {
+            await fetchAllData();
+            await fetchPromosFromDB();
+            await fetchWithdrawsFromDB();
+        }
+
+        async function fetchAllData() {
+            const { data: cData } = await sb.from('cases').select('*').order('id', { ascending: true });
+            dbCases = cData || [];
+            const { data: iData } = await sb.from('case_items').select('*');
+            dbItems = iData || [];
+            renderCasesList();
+        }
+
+        function renderCasesList() {
+            const list = document.getElementById('cases-list'); list.innerHTML = '';
+            dbCases.forEach((c) => {
+                const btn = document.createElement('button');
+                btn.className = `btn-item ${c.id === editingCaseId ? 'active' : ''}`;
+                btn.innerHTML = `<div style="font-size:14px; font-weight:bold;">${c.name}</div><div style="font-size:11px; color:#888;">${c.price} ₽ • [${c.category}] (ID: ${c.id})</div>`;
+                btn.onclick = () => selectCaseForEdit(c.id);
+                list.appendChild(btn);
+            });
+        }
+
+        function createNewLocalCase() {
+            editingCaseId = null; localItems = []; clearEditor();
+            document.getElementById('editor-area').style.display = 'block';
+            document.getElementById('btn-delete-case').style.display = 'none';
+        }
+
+        function selectCaseForEdit(id) {
+            editingCaseId = id; const c = dbCases.find(x => x.id === id); if(!c) return;
+            localItems = dbItems.filter(i => i.case_id === id).map(i => ({...i}));
+            document.getElementById('case-name').value = c.name; document.getElementById('case-price').value = c.price; document.getElementById('case-category').value = c.category; document.getElementById('case-img').value = c.img; document.getElementById('case-img-preview').src = c.img;
+            const ch = c.chances || {};
+            ['consumer','common','rare','epic','legendary','mythical'].forEach(r => document.getElementById(`chance-${r}`).value = ch[r] || 0);
+            renderEditorItems();
+            document.getElementById('editor-area').style.display = 'block'; document.getElementById('btn-delete-case').style.display = 'block'; renderCasesList();
+        }
+
+        function clearEditor() {
+            document.getElementById('case-name').value = "Новый Кейс"; document.getElementById('case-price').value = 100; document.getElementById('case-category').value = 'default'; document.getElementById('case-img').value = PLACEHOLDER_IMG; document.getElementById('case-img-preview').src = PLACEHOLDER_IMG;
+            ['consumer','common','rare','epic','legendary','mythical'].forEach(r => document.getElementById(`chance-${r}`).value = 0);
+            renderEditorItems();
+        }
+
+        function renderEditorItems() {
+            const container = document.getElementById('items-container'); container.innerHTML = '';
+            localItems.forEach((item, idx) => {
+                const row = document.createElement('div'); row.className = `item-row border-${item.rarity}`;
+                row.innerHTML = `<img src="${item.img}" class="item-img-preview" onerror="this.src='${PLACEHOLDER_IMG}'"><div><input type="text" value="${item.name}" onchange="localItems[${idx}].name = this.value" placeholder="Название"><input type="text" value="${item.img}" placeholder="URL картинки" style="font-size:10px; color:#888; margin:0;" onchange="localItems[${idx}].img = this.value"></div><input type="number" value="${item.price}" onchange="localItems[${idx}].price = parseInt(this.value)" placeholder="Цена"><select onchange="localItems[${idx}].rarity = this.value; renderEditorItems()"><option value="consumer" ${item.rarity==='consumer'?'selected':''}>Ширп (Серый)</option><option value="common" ${item.rarity==='common'?'selected':''}>Обычный (Зеленый)</option><option value="rare" ${item.rarity==='rare'?'selected':''}>Редкий (Синий)</option><option value="epic" ${item.rarity==='epic'?'selected':''}>Эпик (Фиол)</option><option value="legendary" ${item.rarity==='legendary'?'selected':''}>Лега (Золото)</option><option value="mythical" ${item.rarity==='mythical'?'selected':''}>МИФ (Красный)</option></select><button class="btn-red" style="width:100%; padding:8px;" onclick="removeLocalItem(${idx})">🗑</button>`;
+                container.appendChild(row);
+            });
+        }
+
+        function addLocalItem() { localItems.push({ name: "Предмет", price: 100, img: PLACEHOLDER_IMG, rarity: "common" }); renderEditorItems(); }
+        function removeLocalItem(idx) { localItems.splice(idx, 1); renderEditorItems(); }
+        function updatePreview() { document.getElementById('case-img-preview').src = document.getElementById('case-img').value; }
+
+        async function saveCaseToDB() {
+            const btn = document.querySelector('.btn-blue'); btn.disabled = true; btn.innerText = "Сохранение...";
+            const caseObj = { name: document.getElementById('case-name').value, price: parseInt(document.getElementById('case-price').value) || 0, category: document.getElementById('case-category').value, img: document.getElementById('case-img').value, chances: { consumer: parseFloat(document.getElementById('chance-consumer').value)||0, common: parseFloat(document.getElementById('chance-common').value)||0, rare: parseFloat(document.getElementById('chance-rare').value)||0, epic: parseFloat(document.getElementById('chance-epic').value)||0, legendary: parseFloat(document.getElementById('chance-legendary').value)||0, mythical: parseFloat(document.getElementById('chance-mythical').value)||0 } };
+            let targetId = editingCaseId;
+            try {
+                if (targetId) await sb.from('cases').update(caseObj).eq('id', targetId);
+                else { const { data, error } = await sb.from('cases').insert([caseObj]).select(); if(error) throw error; targetId = data[0].id; }
+                await sb.from('case_items').delete().eq('case_id', targetId);
+                if (localItems.length > 0) { const itemsToInsert = localItems.map(i => ({ case_id: targetId, name: i.name, price: i.price, img: i.img, rarity: i.rarity })); await sb.from('case_items').insert(itemsToInsert); }
+                alert("Успешно сохранено!"); await fetchAllData(); selectCaseForEdit(targetId);
+            } catch(e) { alert("Ошибка: " + e.message); } finally { btn.disabled = false; btn.innerText = "💾 СОХРАНИТЬ В БАЗУ ДАННЫХ"; }
+        }
+
+        async function deleteCaseFromDB() {
+            if(!editingCaseId || !confirm("Удалить этот кейс?")) return;
+            const { error } = await sb.from('cases').delete().eq('id', editingCaseId);
+            if(error) alert("Ошибка: " + error.message); else { alert("Удалено"); document.getElementById('editor-area').style.display = 'none'; fetchAllData(); }
+        }
+
+        async function fetchPromosFromDB() {
+            const { data, error } = await sb.from('admin_promos').select('*').order('id', { ascending: true });
+            if (!error) { promoData = data || []; renderPromos(); }
+        }
+        function renderPromos() {
+            const container = document.getElementById('promos-container'); container.innerHTML = '';
+            promoData.forEach((promo, idx) => {
+                const row = document.createElement('div'); row.className = 'promo-row';
+                row.innerHTML = `<input type="text" value="${promo.code}" onchange="updatePromoDB(${idx}, 'code', this.value.toUpperCase())" style="color:gold; font-weight:bold;"><input type="number" value="${promo.reward}" onchange="updatePromoDB(${idx}, 'reward', this.value)"><select onchange="updatePromoDB(${idx}, 'is_active', this.value === 'true')" style="color: ${promo.is_active ? '#4CAF50' : '#ff4d4d'}"><option value="true" ${promo.is_active ? 'selected' : ''}>Вкл</option><option value="false" ${!promo.is_active ? 'selected' : ''}>Выкл</option></select><button class="btn-red" style="margin:0; padding:8px;" onclick="deletePromoDB(${idx})">🗑</button>`;
+                container.appendChild(row);
+            });
+        }
+        async function addPromo() { const { data, error } = await sb.from('admin_promos').insert([{ code: "NEW_CODE", reward: 100, is_active: true }]).select(); if(!error) { promoData.push(data[0]); renderPromos(); } }
+        async function updatePromoDB(idx, field, val) { const p = promoData[idx]; if(field === 'reward') val = parseInt(val); const { error } = await sb.from('admin_promos').update({ [field]: val }).eq('id', p.id); if(!error) { p[field] = val; if(field==='is_active') renderPromos(); } }
+        async function deletePromoDB(idx) { if(!confirm("Удалить?")) return; const p = promoData[idx]; const { error } = await sb.from('admin_promos').delete().eq('id', p.id); if(!error) { promoData.splice(idx, 1); renderPromos(); } }
+
+        // --- WITHDRAWALS (заявки на вывод) ---
+        let withdrawData = [];
+        async function fetchWithdrawsFromDB() {
+            const { data, error } = await sb.from('withdraws').select('*').order('created_at', { ascending: false });
+            if (error) {
+                console.warn('Ошибка получения заявок на вывод:', error.message);
+                const container = document.getElementById('withdraws-container');
+                container.innerHTML = '<div style="text-align:center; padding:20px; color:red;">Ошибка доступа к таблице withdraws</div>';
+                withdrawData = [];
+                return;
+            }
+            withdrawData = data || [];
+            renderWithdraws();
+        }
+
+        function renderWithdraws() {
+            const container = document.getElementById('withdraws-container');
+            container.innerHTML = '';
+            if (withdrawData.length === 0) {
+                container.innerHTML = '<div style="text-align:center; padding:20px; color:#666;">Нет заявок на вывод</div>';
+                return;
+            }
+            // header row
+            const header = document.createElement('div');
+            header.className = 'withdraws-header';
+            header.innerHTML = '<span>Пользователь (ID)</span><span>Что выводит</span><span>Банк</span><span>Сервер/ник</span><span>Статус</span><span>Действие</span>';
+            container.appendChild(header);
+            withdrawData.forEach((w, idx) => {
+                const row = document.createElement('div');
+                row.className = 'withdraw-row';
+                if (w.status && w.status !== 'pending') row.style.opacity = '0.6';
+                const userInfo = `${w.user_name||'-'} (${w.user_id})`;
+                let what = '';
+                if (w.type === 'item') what = `${w.item_name} – ${w.amount} ₽`;
+                else if (w.type === 'referral') what = `Реферальные ${w.amount} ₽`;
+                else what = `${w.amount} ₽`;
+                const bank = w.bank_account || '';
+                const servNick = `${w.server||''} ${w.gameNick||''}`.trim();
+                const statusText = w.status || '';
+                let actionBtn = '';
+                if (w.status === 'pending') {
+                    actionBtn = `<button class="btn-green" onclick="confirmWithdraw(${idx})">✓</button> <button class=\"btn-red\" onclick=\"rejectWithdraw(${idx})\">✕</button>`;
+                } else if (w.status === 'confirmed') {
+                    actionBtn = `<button class="btn-gray" disabled>OK</button>`;
+                } else if (w.status === 'rejected') {
+                    actionBtn = `<button class="btn-gray" disabled>ОТКЛОНЕНО</button>`;
+                }
+                row.innerHTML = `<span>${userInfo}</span><span>${what}</span><span>${bank}</span><span>${servNick}</span><span>${statusText}</span><span>${actionBtn}</span>`;
+                container.appendChild(row);
+            });
+        }
+
+        async function confirmWithdraw(idx) {
+            const w = withdrawData[idx];
+            if (!w || w.status !== 'pending') return;
+            if (!confirm('Подтвердить вывод?')) return;
+            const { error } = await sb.from('withdraws').update({ status: 'confirmed' }).eq('id', w.id);
+            if (!error) {
+                w.status = 'confirmed';
+                renderWithdraws();
+                alert('Заявка помечена как выполненная');
+                if (typeof sendAdminLog === 'function') {
+                    sendAdminLog('WITHDRAW', '✅ Вывод подтверждён', `ID заявки: ${w.id}\nПользователь: ${w.user_name} (ID: ${w.user_id})\nСумма: ${w.amount} ₽`);
+                }
+            } else {
+                alert('Ошибка: ' + error.message);
+            }
+        }
+
+        async function rejectWithdraw(idx) {
+            const w = withdrawData[idx];
+            if (!w || w.status !== 'pending') return;
+            if (!confirm('Отклонить вывод?')) return;
+            const { error } = await sb.from('withdraws').update({ status: 'rejected' }).eq('id', w.id);
+            if (!error) {
+                w.status = 'rejected';
+                renderWithdraws();
+                alert('Заявка отклонена');
+                if (typeof sendAdminLog === 'function') {
+                    sendAdminLog('WITHDRAW', '❌ Вывод отклонён', `ID заявки: ${w.id}\nПользователь: ${w.user_name} (ID: ${w.user_id})\nСумма: ${w.amount} ₽`);
+                }
+            } else {
+                alert('Ошибка: ' + error.message);
+            }
+        }
+
+        // --- BROADCAST LOGIC ---
+        async function startBroadcast() {
+            const text = document.getElementById('broadcast-text').value;
+            if(!text) return alert("Введите текст!");
+            if(!confirm("Отправить сообщение всем пользователям?")) return;
+
+            const btn = document.getElementById('btn-broadcast');
+            const statusDiv = document.getElementById('broadcast-status');
+            const sentSpan = document.getElementById('bc-sent');
+            const totalSpan = document.getElementById('bc-total');
+
+            btn.disabled = true;
+            statusDiv.style.display = 'block';
+
+            // 1. Get all users
+            const { data: users, error } = await sb.from('users').select('telegram_id');
+            if(error || !users) return alert("Ошибка получения списка пользователей");
+
+            totalSpan.innerText = users.length;
+            let sentCount = 0;
+
+            // 2. Loop and send (with delay to avoid limits)
+            for (let i = 0; i < users.length; i++) {
+                const uid = users[i].telegram_id;
+                
+                try {
+                    await fetch(API_URL, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            action: "broadcast_fast",
+                            userId: uid,
+                            text: text
+                        })
+                    });
+                    sentCount++;
+                    sentSpan.innerText = sentCount;
+                } catch(e) {
+                    console.error("Broadcast fail:", uid);
+                }
+
+                // Delay 100ms
+                await new Promise(r => setTimeout(r, 100));
+            }
+
+            alert("Рассылка завершена!");
+            btn.disabled = false;
+        }
+
+        function setMode(mode) {
+            document.getElementById('view-cases').style.display = mode === 'cases' ? 'grid' : 'none';
+            document.getElementById('view-promos').style.display = mode === 'promos' ? 'grid' : 'none';
+            document.getElementById('view-broadcast').style.display = mode === 'broadcast' ? 'grid' : 'none';
+            document.getElementById('view-withdraws').style.display = mode === 'withdraws' ? 'grid' : 'none';
+            document.getElementById('view-settings').style.display = mode === 'settings' ? 'grid' : 'none';
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('tab-'+mode).classList.add('active');
+            if (mode === 'withdraws') fetchWithdrawsFromDB();
+            if (mode === 'settings') loadSettingsPanel();
+        }
+        
+        async function loadSettingsPanel() {
+            try {
+                const { data } = await sb.from('game_settings').select('x2_drop_active').eq('id', 1).maybeSingle();
+                const status = data && data.x2_drop_active ? 'АКТИВЕН ✅' : 'ОТКЛЮЧЕН ❌';
+                const color = data && data.x2_drop_active ? '#4CAF50' : '#ff4d4d';
+                document.getElementById('x2-status').innerText = status;
+                document.getElementById('x2-status').style.color = color;
+            } catch(e) {
+                console.error('Error loading settings:', e);
+            }
+        }
+        
+        async function toggleX2FromAdmin() {
+            try {
+                const { data } = await sb.from('game_settings').select('x2_drop_active').eq('id', 1).maybeSingle();
+                const newState = !(data && data.x2_drop_active);
+                await sb.from('game_settings').upsert({ id: 1, x2_drop_active: newState });
+                loadSettingsPanel();
+                alert(newState ? 'X2 ДРОП ВКЛЮЧЕН! ⚡' : 'X2 дроп отключен');
+            } catch(e) {
+                console.error('Error toggling X2:', e);
+                alert('Ошибка при переключении X2');
+            }
+        }
+    </script>
+</body>
+</html>
