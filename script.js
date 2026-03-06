@@ -1519,7 +1519,15 @@ function playContractAnimation(indices, winItem, callback) {
 // ... (MISC) ...
 function closeModal(id) { document.getElementById(id).style.display = 'none'; if(id === 'modal-preview' && countdownInterval) clearInterval(countdownInterval); }
 function saveSettings() { const nick = document.getElementById('setting-nick').value; const srv = document.getElementById('setting-server').value; const bank = document.getElementById('setting-bank').value; if(nick) user.gameNick = nick; if(srv) user.gameServer = srv; if(bank) user.bankAccount = bank; saveUser(); updateUI(); showNotify("Сохранено", "success"); closeModal('modal-profile'); }
-function openProfileModal() { document.getElementById('setting-nick').value = user.gameNick; document.getElementById('setting-server').value = user.gameServer; document.getElementById('setting-bank').value = user.bankAccount; renderHistory(); renderReferralStats(); document.getElementById('modal-profile').style.display = 'flex'; }
+function openProfileModal() {
+    document.getElementById('setting-nick').value = user.gameNick;
+    document.getElementById('setting-server').value = user.gameServer;
+    document.getElementById('setting-bank').value = user.bankAccount;
+    const browserLogoutBtn = document.getElementById('btn-browser-logout');
+    if (browserLogoutBtn) browserLogoutBtn.style.display = isTelegramWebAppContext() ? 'none' : 'block';
+    renderHistory(); renderReferralStats();
+    document.getElementById('modal-profile').style.display = 'flex';
+}
 function renderReferralStats() {
     if(document.getElementById('ref-earn-display')) document.getElementById('ref-earn-display').innerText = user.referralEarnings;
     if(document.getElementById('ref-count-display')) document.getElementById('ref-count-display').innerText = user.referralsCount;
@@ -1536,6 +1544,17 @@ function renderReferralStats() {
     }
 }
 function copyRefLink() { const link = `https://t.me/blackrussiacases_bot/app?startapp=ref_${user.uid}`; if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(link).then(() => showNotify("Скопировано!", "success")).catch(() => fallbackCopyTextToClipboard(link)); } else { fallbackCopyTextToClipboard(link); } }
+function logoutBrowserAccount() {
+    if (isTelegramWebAppContext()) {
+        showNotify('В Telegram WebApp выход недоступен', 'info');
+        return;
+    }
+    if (!confirm('Выйти из браузерного аккаунта Telegram?')) return;
+    localStorage.removeItem(BROWSER_TG_AUTH_KEY);
+    clearReferralPendingWithdrawId();
+    showNotify('Вы вышли из браузерного аккаунта', 'success');
+    setTimeout(() => location.reload(), 250);
+}
 async function withdrawReferralEarnings() {
     if(user.pendingReferralAmount && user.pendingReferralAmount > 0) return showNotify("Уже есть заявка в обработке", "error");
     if(user.referralEarnings <= 0) return showNotify("Нет средств для вывода", "error");
